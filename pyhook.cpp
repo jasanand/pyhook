@@ -182,7 +182,7 @@ private:
                   py::object result = func.operator()<py::return_value_policy::reference>(tradeTs.priceTs_);
                   priceMomentumSignal = result.cast<double>();
 
-                  result = pyModule.attr("momentum").operator()<py::return_value_policy::reference>(tradeTs.volumeTs_);
+                  result = func.operator()<py::return_value_policy::reference>(tradeTs.volumeTs_);
                   volumeMomentumSignal = result.cast<double>();
                }
 
