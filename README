@@ -1,0 +1,41 @@
+Made out of sheer boredom... ;)
+
+Demo program to see how C++ can hook into python using pybind11.
+
+pybind11-3.0 code is included for ease of compilation.
+
+The current C++ pyhook.cpp implementation just calls a momentum function
+in the pyhook.py class by passing it a C++ vector as a reference.
+
+But there is nothing stopping it to call python class objects and functions
+from within C++.
+
+The demo also presents a multithreaded lock-free implementation of a queue
+where multiple dummy exchange objects enqueue trades and their strategy objects
+deque them to process and create momentum signal by calling momentum function
+in the pyhook.py script.
+
+Currently there is only one main interpreter and its shared among different
+threads by scoped locking semantics, sub-interpreters can be deployed
+to get better concurrency from python's point of view.
+https://pybind11.readthedocs.io/en/stable/advanced/embedding.html
+
+We can have multiple producers(exchanges) to consumers(strategies) sinks as
+shown in the demo.
+
+Requirements:
+
+The setup requires benchmark and python dev packages to be installed and assumes
+C++ 20 compiler to be present to build the code.
+sudo apt-get install python-dev-is-python3
+For google benchmark: google...
+
+Makefile Targets:
+
+all: default target which has queue and pybind semantics mentioned above
+benchmark: uses google benchmark to benchmark the program
+disable_pybind: disable any python bindings ie no call to pyhook.py
+benchmark_disable_python: uses google benchmark to benchmark the program and disables
+                          any python bindings ie no call to pyhook.py
+
+
