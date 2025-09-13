@@ -10,10 +10,10 @@ in the pyhook.py class by passing it a C++ vector as a reference.
 But there is nothing stopping it to call python class objects and functions
 from within C++.
 
-The demo also presents a multithreaded lock-free implementation of a queue
-where multiple dummy exchange objects enqueue trades and their strategy objects
-deque them to process and create momentum signal by calling momentum function
-in the pyhook.py script.
+The demo also presents a multithreaded lock-free implementation of both
+un-bounded and bounded queues where multiple dummy exchange objects enqueue 
+trades and their strategy objects deque them to process and create momentum 
+signal by calling momentum function in the pyhook.py script.
 
 Currently there is only one main interpreter and its shared among different
 threads by scoped locking semantics, sub-interpreters can be deployed
