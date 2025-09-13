@@ -270,6 +270,7 @@ public:
       {
          Node* tmp = first_.load();
          first_.store(tmp->next_);
+         Traits::destroy(tmp->value_);
          tmp->reset();
       }
    }
