@@ -166,7 +166,7 @@ private:
 
 #ifndef BENCHMARK_PYHOOK
             //std::osyncstream (std::cout) << "Strategy: " << strategy_id_
-            //<< ", Ric: " << trade->ric_ << std::endl;
+            //<< ", Ric: " << trade->ric_ << ", Price: " << trade->price_ <<  std::endl;
 #endif
 
 #ifndef DISABLE_PYBIND
@@ -241,17 +241,24 @@ void run_main()
 
    py::gil_scoped_release release;
 #endif
+   //TASK_QUEUE task_queue_1;//(200);
+   //TASK_QUEUE task_queue_2;//(200);
    {
       double vola = 0.10; // 10%
 
+      // setting a bounded circular queue with less capacity
+      // allows us to test situations when consumer is slower 
+      // than producer...
+      // can make it higher for better performance
+
       // Set 1 Exchanges and Strategy sink
-      TASK_QUEUE task_queue_1;
+      TASK_QUEUE task_queue_1(150); // bounded 1500 circular queue, 
       Exchange exchange1 {"MSFTO.O", 490.0, 10000, vola, task_queue_1, 200};
       Exchange exchange2 {"AAPL.OQ", 230.0, 15000, vola, task_queue_1, 100};
       Strategy strategy1 {"S1", task_queue_1, 300};
 
       // Set 2 Exchanges and Strategy sink
-      TASK_QUEUE task_queue_2;
+      TASK_QUEUE task_queue_2(100); // bounded 1000 circular queue
       Exchange exchange3 {"NVDA.O" , 174.8, 20000, vola, task_queue_2, 100};
       Exchange exchange4 {"META.O" , 724.5, 21000, vola, task_queue_2, 100};
       Strategy strategy2 {"S2", task_queue_2, 200};

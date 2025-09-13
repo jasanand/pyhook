@@ -85,7 +85,8 @@ using TradePtr = std::unique_ptr<Trade>;
 // If we pass naked pointers onto the queue.
 //using TradePtr = Trade*;
 
-using TASK_QUEUE = queue::Queue<TradePtr>;
+//using TASK_QUEUE = queue::Queue<TradePtr>;
+using TASK_QUEUE = queue::CircularQueue<TradePtr>;
 
 // To determine the correct type of TradePtr for
 // construction and destruction.

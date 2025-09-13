@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <atomic>
 #include <iostream>
+#include <thread>
+#include <chrono>
 
 namespace queue
 {
@@ -244,6 +246,180 @@ private:
    static constexpr bool LOCKED = true;
    static constexpr bool UNLOCKED = false;
 };
+
+template<typename T>
+class CircularQueue
+{
+public:
+
+   CircularQueue(size_t n)
+   : buffer_(n), next_idx_(0)
+   {
+      consumer_lock_.store(UNLOCKED);
+      producer_lock_.store(UNLOCKED);
+
+      // dummy starting node, null value, null next
+      Node* divider = &buffer_[next_idx_++];
+      first_.store(divider);
+      last_.store(divider);
+   }
+
+   ~CircularQueue()
+   {
+      while(nullptr != first_.load())
+      {
+         Node* tmp = first_.load();
+         first_.store(tmp->next_);
+         tmp->reset();
+      }
+   }
+
+   // Push an element onto the queue
+   void enqueue(const T& t)
+   {
+      bool expected = UNLOCKED;
+
+      // we check if the current value is false (UNLOCKED), if not then we wait until 
+      // it is set false (UNLOCKED) later
+      // and then this thread takes hold by setting it to true (LOCKED)
+      while(!producer_lock_.compare_exchange_weak(expected, LOCKED, std::memory_order_acquire)) 
+      {
+         expected = UNLOCKED;
+         // instead of busy spinning we can wait until notified
+         // as under the hood the wait call may spin for a bit 
+         // and then use futex
+         producer_lock_.wait(true, std::memory_order_relaxed);
+      }
+
+      // Get the next node to assign t to
+      Node* new_node = &buffer_[next_idx_++];
+
+      // check if the next_ is still valid
+      // we have a slow consumer so we need to wait...
+      while (new_node->next_)
+      {
+         std::this_thread::sleep_for(std::chrono::milliseconds(1));
+         //std::osyncstream (std::cout) << "slow consumer wait spin" << std::endl; 
+      }
+
+      // set the value for the node
+      new_node->set(Traits::create(t));
+
+      if (next_idx_ == buffer_.size())
+      {
+         next_idx_ = 0;
+      }
+
+      // Publish the new node
+      last_.load()->next_.store(new_node);
+      last_.store(new_node);
+
+      producer_lock_.store(UNLOCKED, std::memory_order_release);
+      producer_lock_.notify_all();
+   }
+
+   // Attempt to remove an element from the queue.  Will return true if the
+   // passed in reference was updated.
+   bool dequeue(T& result)
+   {
+      // we check if the current value is false (UNLOCKED), if not then we wait until 
+      // it is set false (UNLOCKED) later
+      // and then this thread takes hold by setting it to true (LOCKED)
+      bool expected = UNLOCKED;
+      while(!consumer_lock_.compare_exchange_weak(expected, LOCKED, std::memory_order_acquire)) 
+      {
+         expected = UNLOCKED;
+         // instead of busy spinning we can wait until notified
+         // as under the hood the wait call may spin for a bit 
+         // and then use futex
+         consumer_lock_.wait(true, std::memory_order_relaxed);
+      }
+
+      Node* the_first = first_.load();
+      Node* the_next = the_first->next_.load();
+
+      if(the_next != nullptr)
+      {
+         // Fetch the value out and move the first pointer
+         PtrType the_value = Traits::get(the_next->value_);
+         the_next->value_ = nullptr;
+         first_.store(the_next);
+
+         // Release the lock so others can gain access
+         consumer_lock_.store(UNLOCKED, std::memory_order_release);
+         consumer_lock_.notify_all();
+
+         // Assign the value to result and clean up
+         result = Traits::convert(the_value);
+         Traits::destroy(the_value);
+         the_first->reset();
+
+         return true;
+      }
+
+      consumer_lock_.store(UNLOCKED, std::memory_order_release);
+      consumer_lock_.notify_all();
+      return false;
+   }
+
+private:
+
+   // Select a traits type from above.
+   using Traits = queue_detail::TypeTraits<T>;
+
+   // Get the type the user instantiated us with and the type of a pointer
+   // They'll be the same if we were instantiated with a pointer type
+   using UserType = Traits::Type;
+   using PtrType = Traits::PtrType;
+
+   struct Node;
+
+   // need the next of Node to be atomic
+   using AtomicNodePtr = std::atomic<Node*>;
+
+   struct Node
+   {
+      Node()
+      : value_(nullptr), next_(nullptr) {}
+
+      void set(PtrType value)
+      {
+         value_ = Traits::get(value);
+      }
+
+      void reset()
+      {
+         value_ = nullptr;
+         next_ = nullptr;
+      }
+   
+      PtrType value_;
+      AtomicNodePtr next_;
+   };
+
+
+private:
+
+   char pad0[queue_detail::eCacheLineSize];
+
+   // For one consumer at a time
+   alignas(queue_detail::eCacheLineSize) AtomicNodePtr first_;
+   alignas(queue_detail::eCacheLineSize) std::atomic<bool> consumer_lock_;
+
+   // For one producer at a time
+   alignas(queue_detail::eCacheLineSize) AtomicNodePtr last_;
+   alignas(queue_detail::eCacheLineSize) std::atomic<bool> producer_lock_;
+
+   // here we store nodes in a ring buffer
+   using RingBuffer = std::vector<Node>;
+   RingBuffer buffer_;
+
+   size_t next_idx_;
+
+   static constexpr bool LOCKED = true;
+   static constexpr bool UNLOCKED = false;
+};
+
 
 
 } // end of namespace
