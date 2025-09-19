@@ -35,23 +35,22 @@ class Thread
 {
 public:
    Thread():jthread_() {}
-   ~Thread() = default;
    Thread(const Thread&) = delete;
    Thread(Thread&&) = delete;
    Thread operator=(const Thread&) = delete;
    Thread operator=(Thread&&) = delete;
 
-   void run()
+   bool run()
    {
       if (jthread_)
       {
-         stop();
+         std::cerr << "Thread is already running!!" << std::endl;
+         return false;
       }
-      else
-      {
-         jthread_.reset(new std::jthread([&](std::stop_token stop) 
-                        { static_cast<T*>(this)->runImpl(stop); }));
-      }
+
+      jthread_.reset(new std::jthread([&](std::stop_token stop) 
+                     { static_cast<T*>(this)->runImpl(stop); }));
+      return true;
    }
 
    void stop()
@@ -61,8 +60,7 @@ public:
          jthread_->request_stop();
          // maybe wait for a bit...
          //std::this_thread::sleep_for(std::chrono::seconds(3));
-         jthread_->join();
-         jthread_.reset();
+         join();
       }
    }
 
@@ -71,7 +69,14 @@ public:
       if (jthread_)
       {
          jthread_->join();
+         jthread_.reset();
       }
+   }
+
+   // join in destructor
+   ~Thread()
+   {
+      join();
    }
 
 protected:
@@ -169,11 +174,11 @@ private:
             //<< ", Ric: " << trade->ric_ << ", Price: " << trade->price_ <<  std::endl;
 #endif
 
-#ifndef DISABLE_PYBIND
             if (tradeTs.priceTs_.size() >= 20)
             {
-               double priceMomentumSignal;
-               double volumeMomentumSignal;
+               double priceMomentumSignal = NAN;
+               double volumeMomentumSignal = NAN;
+#ifndef DISABLE_PYBIND
                {
                   // acquire lock
                   py::gil_scoped_acquire acquire;
@@ -185,8 +190,13 @@ private:
                   result = func.operator()<py::return_value_policy::reference>(tradeTs.volumeTs_);
                   volumeMomentumSignal = result.cast<double>();
                }
+#endif
 
                // take some action on these signals... send orders etc...
+               if (std::isfinite(priceMomentumSignal) &&
+                   std::isfinite(volumeMomentumSignal))
+               {
+               }
 
 #ifndef BENCHMARK_PYHOOK
                //std::osyncstream (std::cout) << "Strategy: " << strategy_id_ 
@@ -195,7 +205,6 @@ private:
                   //<< ", VolumeMomentumSignal: " << volumeMomentumSignal << std::endl;
 #endif
             }
-#endif
 
             // not required if std::unique_ptr
             if constexpr(!Traits::is_unique_ptr(trade))
@@ -241,24 +250,27 @@ void run_main()
 
    py::gil_scoped_release release;
 #endif
-   //TASK_QUEUE task_queue_1;//(200);
-   //TASK_QUEUE task_queue_2;//(200);
+
+   // setting a bounded circular queue with less capacity
+   // allows us to test situations when consumer is slower 
+   // than producer...
+   // can make it higher for better performance
+
+   // Set 1 TASK_QUEUE
+   TASK_QUEUE task_queue_1(150); // bounded 1500 circular queue, 
+
+   // Set 2 TASK_QUEUE
+   TASK_QUEUE task_queue_2(100); // bounded 1000 circular queue
+
    {
       double vola = 0.10; // 10%
 
-      // setting a bounded circular queue with less capacity
-      // allows us to test situations when consumer is slower 
-      // than producer...
-      // can make it higher for better performance
-
       // Set 1 Exchanges and Strategy sink
-      TASK_QUEUE task_queue_1(150); // bounded 1500 circular queue, 
       Exchange exchange1 {"MSFTO.O", 490.0, 10000, vola, task_queue_1, 200};
       Exchange exchange2 {"AAPL.OQ", 230.0, 15000, vola, task_queue_1, 100};
       Strategy strategy1 {"S1", task_queue_1, 300};
 
       // Set 2 Exchanges and Strategy sink
-      TASK_QUEUE task_queue_2(100); // bounded 1000 circular queue
       Exchange exchange3 {"NVDA.O" , 174.8, 20000, vola, task_queue_2, 100};
       Exchange exchange4 {"META.O" , 724.5, 21000, vola, task_queue_2, 100};
       Strategy strategy2 {"S2", task_queue_2, 200};
@@ -271,14 +283,7 @@ void run_main()
       exchange4.run();
       strategy2.run();
 
-      exchange1.join();
-      exchange2.join();
-      strategy1.join();
-
-      exchange3.join();
-      exchange4.join();
-      strategy2.join();
-   }
+   } // all threads join on destruction, no need for explicit join
 }
 
 #ifndef BENCHMARK_PYHOOK
