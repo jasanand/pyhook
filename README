@@ -1,5 +1,3 @@
-Made out of sheer boredom... ;)
-
 Demo program to see how C++ can hook into python using pybind11.
 
 pybind11-3.0 code is included for ease of compilation.
